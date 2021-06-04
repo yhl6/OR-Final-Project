@@ -1,10 +1,8 @@
 import numpy as np
 import pandas as pd
+import xlsxwriter
 from gurobipy import *
 pd.set_option('display.max_columns', None, 'display.max_rows', None)
-
-MCP = Model()
-MCP.Params.LogToConsole = 0
 
 # Set and Parameters
 N = 300  # 醫護人員數量上限列表
@@ -12,8 +10,8 @@ S = 15  # 每站醫護人員數量
 U = 300  # 每站可快篩人數上限
 Days = range(0, 16)  # 日期集合
 Districts = range(0, 12)  # 行政區集合
-Villages = range(0, 456)  # 里的集合
-Candidates = range(0, 129)  # 候選點集合
+Villages = range(0, 456)  # 里的集合 j
+Candidates = range(0, 129)  # 候選點集合 k
 # Levels = range(1, 6)  # 快篩站等級集合
 
 # Data
@@ -27,9 +25,10 @@ Z = pd.read_excel(df, sheet_name='Z', index_col=0, skiprows=0)
 # print(P.iat[0, 3])
 # print(R.iat[0, 3])
 # print(Z.iat[0, 1])
-
+writer = pd.ExcelWriter('Result有乘R.xlsx', engine='xlsxwriter')
 for t in Days:
-    sol_df = pd.DataFrame()
+    MCP = Model()
+    MCP.Params.LogToConsole = 0
     # Variables
     # x_k 若第k個候選點有設置快篩站則為1，反之為0
     x = MCP.addVars(Candidates, lb=0, vtype=GRB.BINARY)
@@ -41,7 +40,7 @@ for t in Days:
     # c = MCP.addVars(Villages, lb=0, vtype=GRB.BINARY)
 
     # Objective Value
-    MCP.setObjective(quicksum(P.iat[j, t + 3] * quicksum(f[j, k] for k in Candidates) for j in Villages), GRB.MAXIMIZE)
+    MCP.setObjective(quicksum(P.iat[j, t + 3] * R.iat[j, t + 3] * quicksum(f[j, k] for k in Candidates) for j in Villages), GRB.MAXIMIZE)
 
     # Constraints
     # 所有快篩站的總醫護人數不能超過某個上限(醫療資源有限)
@@ -58,7 +57,14 @@ for t in Days:
 
     MCP.optimize()
     print(f'{t + 1}: {MCP.objVal}')
-
+    f_sol_df = pd.DataFrame(index=range(1, 457), columns=range(1, 130))
+    x_sol_df = pd.DataFrame(index=range(1, 130), columns=[20210514 + t])
+    # print(sol_df)
     for j in Villages:
         for k in Candidates:
-            sol_df
+            f_sol_df.iat[j, k] = f[j, k].x
+    for k in Candidates:
+        x_sol_df.iloc[k] = x[k].x
+    f_sol_df.to_excel(writer, sheet_name=f'f_{20210514 + t}')
+    x_sol_df.to_excel(writer, sheet_name=f'x_{20210514 + t}')
+writer.save()
